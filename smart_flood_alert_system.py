@@ -1,51 +1,8 @@
-#=============================================================================
-# --- Smart Flood Warning System ---
-#=============================================================================
-
-# --- Dependency check (run only once per session) ---
-import importlib.util
-import subprocess
-import sys
-
-def is_package_installed(import_name):
-    """Checks if a package is installed."""
-    return importlib.util.find_spec(import_name) is not None
-
-# A dictionary to map package names to their import names if they differ
-PACKAGE_IMPORT_MAP = {
-    "scikit-learn": "sklearn",
-    "python-dotenv": "dotenv"
-}
-
-REQUIRED_PACKAGES = [
-    "streamlit", "pandas", "scikit-learn", "plotly", "geopy", "python-dotenv", "twilio", "requests"
-]
-
-import streamlit as st
-
-# This block checks for and installs missing packages.
-if "checked_dependencies" not in st.session_state:
-    missing_packages = []
-    for pkg in REQUIRED_PACKAGES:
-        import_name = PACKAGE_IMPORT_MAP.get(pkg, pkg)
-        if not is_package_installed(import_name):
-            if pkg not in missing_packages:
-                missing_packages.append(pkg)
-
-    if missing_packages:
-        st.info(f"Installing required packages: {', '.join(missing_packages)}...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", *missing_packages])
-            st.success("All missing packages have been installed. Please refresh the page.")
-            st.session_state.checked_dependencies = True
-            st.stop()
-        except Exception as e:
-            st.error(f"Failed to install packages: {e}")
-            st.stop()
-    else:
-        st.session_state.checked_dependencies = True
+# =============================================================================
+# --- Smart Flood Warning System (Deployment Ready) ---
 # =============================================================================
 
+import streamlit as st
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -56,15 +13,10 @@ from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
-import os
 import requests
 from geopy.geocoders import Nominatim
-from dotenv import load_dotenv, find_dotenv
 from twilio.rest import Client
-
-# Load environment variables for Twilio
-load_dotenv(find_dotenv("Your Twilio Account Credentials.env"))
-
+import os
 
 # =============================================================================
 # --- PAGE CONFIGURATION & THEME ---
@@ -151,19 +103,22 @@ st.markdown("""
 def load_and_prepare_data():
     """Loads, merges, and prepares the INDOFLOODS dataset."""
     try:
+        # These files must be in the same directory as the script
         events_df = pd.read_csv('floodevents_indofloods.csv')
         precip_df = pd.read_csv('precipitation_variables_indofloods.csv')
         catchment_df = pd.read_csv('catchment_characteristics_indofloods.csv')
+        
         # Clean column names
         for df in [events_df, precip_df, catchment_df]:
             df.columns = df.columns.str.strip()
+            
         # Merge datasets
         df = pd.merge(events_df, precip_df, on='EventID', how='inner')
         df['GaugeID'] = df['EventID'].apply(lambda x: '-'.join(x.split('-')[:3]))
         df = pd.merge(df, catchment_df, on='GaugeID', how='left')
         return df
     except FileNotFoundError as e:
-        st.error(f"Error: A required data file was not found ({e.filename}). Please ensure all CSV files are present in the same directory.")
+        st.error(f"Error: A required data file was not found ({e.filename}). Please ensure all CSV files are present in the root of your repository.")
         st.stop()
 
 @st.cache_resource
@@ -252,13 +207,15 @@ def truncate_location(location_name, max_length=40):
     return location_name
 
 def send_sms_alert(phone_number, location_name, risk_level, rainfall_mm, language='English'):
-    """Sends an SMS alert using Twilio."""
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    twilio_phone_number = os.getenv("TWILIO_PHONE_NUMBER")
-
-    if not all([account_sid, auth_token, twilio_phone_number]):
-        st.error("Twilio credentials are not configured. Cannot send SMS. Please check your environment file.")
+    """Sends an SMS alert using Twilio credentials from Streamlit Secrets."""
+    # Access secrets from st.secrets
+    try:
+        account_sid = st.secrets["twilio"]["account_sid"]
+        auth_token = st.secrets["twilio"]["auth_token"]
+        twilio_phone_number = st.secrets["twilio"]["phone_number"]
+    except KeyError:
+        st.error("Twilio credentials are not configured in Streamlit Secrets. Cannot send SMS.")
+        st.info("Please add your Twilio credentials to your app's secrets. See deployment instructions.")
         return False
 
     templates = {
